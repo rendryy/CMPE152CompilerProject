@@ -1,70 +1,144 @@
-KEYWORDS = {
-    "auto","break","case","char","const","continue","default","do",
-    "double","else","enum","extern","float","for","goto","if",
-    "int","long","register","return","short","signed","sizeof",
-    "static","struct","switch","typedef","union","unsigned",
-    "void","volatile","while"
-}
-
-OPERATORS = set("+-*/><=")
-DELIMITERS = set(" +-*/><=(),;{}[]")
-
-def is_delimiter(ch):
-    return ch in DELIMITERS
-
-def is_operator(ch):
-    return ch in OPERATORS
-
-def is_keyword(word):
-    return word in KEYWORDS
-
-def is_integer(word):
-    return word.isdigit()
-
-def is_valid_identifier(word):
-    return word and not word[0].isdigit() and not is_delimiter(word[0])
+from typing import List
 
 
-# =========================
-# MAIN LEXER
-# =========================
-def lexical_analyzer(text):
-    left = 0
-    right = 0
-    n = len(text)
+class TokenType:
+    KEYWORD = 'KEYWORD'
+    IDENTIFIER = 'IDENTIFIER'
+    NUMBER = 'NUMBER'
+    OPERATOR = 'OPERATOR'
+    PUNCTUATION = 'PUNCTUATION'
+    STRING = 'STRING'
+    INDENT = 'INDENT'
+    DEDENT = 'DEDENT'
+    NEWLINE = 'NEWLINE'
+    EOF = 'EOF'
+    UNKNOWN = 'UNKNOWN'
 
-    tokens = []
 
-    while right <= n:
+class Token:
+    def __init__(self, type_, value, line_number, column=0):
+        self.type = type_
+        self.value = value
+        self.line_number = line_number
+        self.column = column
 
-        if right < n and not is_delimiter(text[right]):
-            right += 1
-            continue
 
-        # single char operator
-        if right < n and is_operator(text[right]) and left == right:
-            tokens.append(("OPERATOR", text[right]))
-            right += 1
-            left = right
-            continue
+class Lexer:
+    def __init__(self):
+        self.keywords = {
+            "if", "else", "while", "for", "def", "return",
+            "break", "continue", "import", "as", "from",
+            "in", "range", "len", "True", "False", "not"
+        }
 
-        # extract word
-        if left != right:
-            sub = text[left:right]
+        self.single_ops = {'+', '-', '*', '/', '=', '>', '<', '!', ',', ':'}
+        self.double_ops = {'==', '>=', '<=', '!='}
+        self.punctuations = {'(', ')', '{', '}'}
 
-            if is_keyword(sub):
-                tokens.append(("KEYWORD", sub))
+    def handle_indentation(self, lines: List[str]):
+        tokens = []
+        indent_stack = [0]
+        line_number = 1
 
-            elif is_integer(sub):
-                tokens.append(("INTEGER", sub))
+        for line in lines:
+            stripped = line.lstrip()
 
-            elif is_valid_identifier(sub):
-                tokens.append(("IDENTIFIER", sub))
+            if stripped == '':
+                line_number += 1
+                continue
 
-            else:
-                tokens.append(("UNKNOWN", sub))
+            indent = len(line) - len(stripped)
 
-        right += 1
-        left = right
+            if indent > indent_stack[-1]:
+                indent_stack.append(indent)
+                tokens.append(Token(TokenType.INDENT, '', line_number))
 
-    return tokens
+            while indent < indent_stack[-1]:
+                indent_stack.pop()
+                tokens.append(Token(TokenType.DEDENT, '', line_number))
+
+            tokens.extend(self.tokenize_line(stripped, line_number))
+            tokens.append(Token(TokenType.NEWLINE, '', line_number))
+
+            line_number += 1
+
+        # close remaining indents
+        while len(indent_stack) > 1:
+            indent_stack.pop()
+            tokens.append(Token(TokenType.DEDENT, '', line_number))
+
+        tokens.append(Token(TokenType.EOF, '', line_number))
+        return tokens
+
+    def tokenize(self, source_code: str):
+        lines = source_code.split('\n')
+        return self.handle_indentation(lines)
+
+    def tokenize_line(self, line: str, line_number: int):
+        tokens = []
+        i = 0
+
+        while i < len(line):
+            ch = line[i]
+
+            # skip whitespace
+            if ch.isspace():
+                i += 1
+                continue
+            if ch == '"' or ch == "'":
+                quote = ch
+                i += 1
+                value = ''
+
+                while i < len(line) and line[i] != quote:
+                    value += line[i]
+                    i += 1
+
+                i += 1  # closing quote
+                tokens.append(Token(TokenType.STRING, value, line_number))
+                continue
+            if ch.isdigit():
+                num = ch
+                i += 1
+
+                while i < len(line) and line[i].isdigit():
+                    num += line[i]
+                    i += 1
+
+                tokens.append(Token(TokenType.NUMBER, num, line_number))
+                continue
+            if ch.isalpha() or ch == '_':
+                ident = ch
+                i += 1
+
+                while i < len(line) and (line[i].isalnum() or line[i] == '_'):
+                    ident += line[i]
+                    i += 1
+
+                if ident in self.keywords:
+                    tokens.append(Token(TokenType.KEYWORD, ident, line_number))
+                else:
+                    tokens.append(Token(TokenType.IDENTIFIER, ident, line_number))
+
+                continue
+
+            if i + 1 < len(line):
+                pair = ch + line[i + 1]
+                if pair in self.double_ops:
+                    tokens.append(Token(TokenType.OPERATOR, pair, line_number))
+                    i += 2
+                    continue
+
+            if ch in self.single_ops:
+                tokens.append(Token(TokenType.OPERATOR, ch, line_number))
+                i += 1
+                continue
+            if ch in self.punctuations:
+                tokens.append(Token(TokenType.PUNCTUATION, ch, line_number))
+                i += 1
+                continue
+
+            tokens.append(Token(TokenType.UNKNOWN, ch, line_number))
+            i += 1
+
+        return tokens
