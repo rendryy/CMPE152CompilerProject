@@ -1,51 +1,31 @@
-from lexer import Lexer
-from parser_ import Parser 
+import sys
+from lexer import Lexer, Token, TokenType
+from parser_ import Parser, ErrorReporter
+from CODEGEN1 import CodeGenerator
 
-def main():
-    # -------------------------
-    # READ SOURCE FILE
-    # -------------------------
-    with open("sample.txt", "r") as f:
-        code = f.read()
+def run_file(filename, output_file):
+    with open(filename, "r") as f:
+        source = f.read()
 
-    print("===== SOURCE CODE =====")
-    print(code)
+    errors = ErrorReporter()
 
-    # -------------------------
-    # LEXICAL ANALYSIS
-    # -------------------------
-    lexer = Lexer(code)
-    tokens = lexer.tokenize()
+    # LEX
+    lexer = Lexer()
+    tokens = lexer.tokenize(source)
 
-    print("\n===== TOKENS =====")
-    for t in tokens:
-        print(t)
+    # PARSE
+    parser = Parser(tokens, errors)
+    ast = parser.parse_program()
 
-    # -------------------------
-    # PARSING + CODE GENERATION
-    # -------------------------
-    parser = Parser(tokens)
-    parser.parse()
+    # CODEGEN
+    codegen = CodeGenerator()
+    asm = codegen.generate(ast)
 
-    # -------------------------
-    # OUTPUT ERRORS (if any)
-    # -------------------------
-    if parser.errors:
-        print("\n===== SYNTAX ERRORS =====")
-        for e in parser.errors:
-            print(e)
-    else:
-        print("\n===== NO SYNTAX ERRORS =====")
+    with open(output_file, "w") as f:
+        f.write("\n".join(asm))
 
-    # -------------------------
-    # GENERATED CODE
-    # -------------------------
-    print("\n===== INTERMEDIATE CODE =====")
-    parser.codegen.print_code()
-
-
-# =========================
-# ENTRY POINT
-# =========================
 if __name__ == "__main__":
-    main()
+    input_file = sys.argv[1]
+    output_file = sys.argv[3] if len(sys.argv) > 3 else "out.asm"
+
+    run_file(input_file, output_file)

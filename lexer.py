@@ -28,12 +28,13 @@ class Lexer:
         self.keywords = {
             "if", "else", "while", "for", "def", "return",
             "break", "continue", "import", "as", "from",
-            "in", "range", "len", "True", "False", "not"
+            "in", "range", "len", "True", "False", "not" ,
+            "print"
         }
 
         self.single_ops = {'+', '-', '*', '/', '=', '>', '<', '!', ',', ':'}
         self.double_ops = {'==', '>=', '<=', '!='}
-        self.punctuations = {'(', ')', '{', '}'}
+        self.punctuations = {'(', ')', '{', '}', ',', ':'}
 
     def handle_indentation(self, lines: List[str]):
         tokens = []
@@ -44,6 +45,7 @@ class Lexer:
             stripped = line.lstrip()
 
             if stripped == '':
+                tokens.append(Token(TokenType.NEWLINE, '', line_number))
                 line_number += 1
                 continue
 
