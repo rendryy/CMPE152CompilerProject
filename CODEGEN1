@@ -1,0 +1,163 @@
+class CodeGenerator:
+    def __init__(self):
+        self.header: List[str] = []
+        self.data: List[str] = []
+        self.text: List[str] = []
+        self.vars: set = set()
+        self.label_count = 0
+
+def new_label(self, prefix: str = 'L') -> str:
+    lbl = f"{prefix}{self.label_count}"
+    self.label_count += 1
+    return lbl
+
+def generate(self, program: Program) -> List[str]:
+    self.header = [
+        ".686p",
+        ".model flat, stdcall",
+        ".stack 4096"
+        "ExitProcess proto,dwExitCode:dword",
+    ]
+    self.text = ['.code', 'main proc']
+    program.body.visit(self)
+    self.text.append('\tinvoke ExitProcess, 0')
+    self.text.append('main endp')
+    self.text.append('end main')
+
+    data_section = ['.data']
+    for var in sorted(self.vars):
+        data_section.append(f'/t{var} dd 0')
+
+    return self.header + data_section + self.text
+
+def visit(self, node: ASTNode) -> None:
+    method = getattr(self, f"visit_{node.__class__.__name__.lower()}", None)
+    if not method:
+        raise NotImplementedError(f"No codegen for {node.__class__.__name__}")
+    method(node)
+
+def visit_assignment(self, node: Assignment) -> None:
+    self.vars.add(node.target.name)
+    self.visit(node.value)
+    self.text.append(f'\tmov {node.target.name}, eax')
+
+def visit_identifier(self, node: Identifier) -> None:
+    self.text.append(f'\tmov eax, {node.name}')
+
+def visit_literal(self, node: Literal) -> None:
+    if isinstance(node.value, int):
+        self.text.append(f'\tmov eax, {node.value}')
+    else:
+        raise NotImplementedError("Only integer literals supported")
+    
+def visit_print(self, node: Print) -> None:
+    self.visit(node.expr)
+    self.text.append('\t; print skipped (no output used)')
+
+def visit_binop(self, node: BinOp) -> None:
+    self.visit(node.left)
+    self.text.append('\tpush eax')
+    self.visit(node.right)
+    self.text.append('\tpop ebx')
+    op = node.op
+    if op == '+':
+        self.text.append('\tadd eax, ebx')
+    elif op == '-':
+        self.text.append('\tsub eax, ebx')
+    elif op == '*':
+        self.text.append('\timul eax, ebx')
+    elif op == '/':
+        self.text.append('\txchg eax, ebx')
+        self.text.append('\tcdq')
+        self.text.append('\tidiv ebx')
+    elif op in ('==', '!=', '<', '>', '<=', '>='):
+        #compare left (ebx) vs right (eax)
+        self.text.append('\tcmp ebx, eax')
+        self.text.append('\tmov eax, 0')
+        set_instr = {
+            '==': 'sete', '!=': 'setne', '<': 'setl',
+            '<=': 'setle', '>': 'setg', '>=': 'setge'
+        }[op]
+        self.text.append(f'\t{set_instr} al')
+    elif op in ('and', 'or'):
+        #simple truthiness: nonzero = true
+        #eval left (ebx) and right (eax)
+        if op == 'and':
+            self.text.append('\tcmp ebx, 0')
+            self.text.append('\tsetne al') #al = left != 0
+            self.text.append('\tmovzx ebx, al')
+            self.text.append('\tcmp eax, 0') 
+            self.text.append('\tsetne al') #al = right != 0
+            self.text.append('\tmovzx eax, al')
+            self.text.append('\tand eax, ebx')
+        else: #'or'
+            self.text.append('\tcmp ebx, 0')
+            self.text.append('\tsetne al')
+            self.text.append('\tmovzx ebx, al')
+            self.text.append('\tcmp eax, 0')
+            self.text.append('\tsetne al')
+            self.text.append('\tmovzx eax, al')
+            self.text.append('\tor eax, ebx')
+    else:
+        raise NotImplementedError(f"Unsupported binary operator: {op}")
+    
+def visit_unaryop(self, node: UnaryOp) -> None:
+    self.visit(node.expr)
+    if node.op == '-':
+        self.text.append('\tneg eax')
+    elif node.op == 'not':
+        self.text.append('\tcmp eax, 0')
+        self.text.append('\tsetz al')
+    else:
+        raise NotImplementedError(f"Unary operator not supportd: {node.op}")
+    
+def visit_if(self, node: If) -> None:
+    else_lbl = self.new_label('Else')
+    end_lbl = self.new_label('End')
+    self.visit(node.cond)
+    self.text.append('\tcmp eax, 0')
+    self.text.append(f'\tje {else_lbl}')
+    node.then_branch.visit(self)
+    self.text.append(f'\tjmp {end_lbl}')
+    self.text.append(f'{else_lbl}')
+    if node.else_branch:
+        node.else_branch.visit(self)
+    self.text.append(f'{end_lbl}')
+
+def visit_while(self, node: While) -> None:
+    start_lbl = self.new_label('Lstart')
+    end_lbl = self.new_label('Lend')
+    self.text.append(f'{start_lbl}:')
+    self.visit(node.cond)
+    self.text.append('\tcmp eax, 0')
+    self.text.append(f'\tje {end_lbl}')
+    node.body.visit(self)
+    self.text.append(f'\tjmp {start_lbl}')
+    self.text.append(f'{end_lbl}')
+
+def visit_for(self, node: For) -> None:
+    #not implemented; placeholder
+    self.text.append('\t; for-loops not implemented')
+
+def visit_functiondef(self, node: FunctionDef) -> None:
+    self.text.append(f'{node.name}, proc')
+    self.text.append('\tpush ebp')
+    self.text.append('\tmov ebp, esp')
+    node.body.visit(self)
+    self.text.append('\tpop ebp')
+    self.text.append('\tret')
+    self.text.append(f'{node.name} endp')
+
+def visit_return(self, node: Return) -> None:
+    self.visit(node.expr)
+    self.text.append('\tmov esp, ebp')
+    self.text.append('\tpop ebp')
+    self.text.append('\tret')
+
+def visit_functioncall(self, node: FunctionCall) -> None:
+    for arg in reversed(node.args):
+        self.visit(arg)
+        self.text.append('\tpush eax')
+    self.text.append(f'\tcall {node.name}')
+    if node.args:
+        self.text.append(f'\tadd esp, {len(node.args) * 4}')
