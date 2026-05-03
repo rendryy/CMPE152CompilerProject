@@ -11,7 +11,7 @@ class CodeGenerator:
         self.header: List[str] = []
         self.data: List[str] = []
         self.text: List[str] = []
-        self.vars: Set[str] = set()          # global variables
+        self.vars: Set[str] = set()         
         self.label_count = 0
         
         self.current_function: Optional[str] = None
@@ -29,7 +29,7 @@ class CodeGenerator:
             ".model flat, stdcall",
             ".stack 4096",
             "ExitProcess proto,dwExitCode:dword",
-            "printf PROTO C, format:PTR BYTE, ..."
+            "printf PROTO C, format:PTR BYTE, :VARARG"
         ]
 
         global_stmts = []
